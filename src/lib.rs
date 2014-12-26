@@ -6,7 +6,7 @@
 //! ```
 //! use markov::Chain;
 //! 
-//! let mut chain = Chain::for_strings();
+//! let mut chain = Chain::new();
 //! chain.feed_str("I like cats and I like dogs.");
 //! println!("{}", chain.generate_str());
 //! ```
@@ -14,7 +14,7 @@
 //! ```
 //! use markov::Chain;
 //!
-//! let mut chain = Chain::new(0u8, 255);
+//! let mut chain = Chain::new();
 //! chain.feed(vec![1u8, 2, 3, 5]).feed(vec![3u8, 9, 2]);
 //! println!("{}", chain.generate());
 //! ```
@@ -43,8 +43,7 @@ pub struct Chain<T: Eq + Hash> {
 }
 
 impl<T: Eq + Hash> Chain<T> {
-    /// Constructs a new Markov chain using the given tokens as the marked starting and ending
-    /// points for generation.
+    /// Constructs a new Markov chain. 
     pub fn new() -> Chain<T> {
         Chain {
             map: {
@@ -157,12 +156,6 @@ impl<'a, T: Encodable<Encoder<'a>, IoError> + Eq + Hash> Chain<T> {
 }
 
 impl Chain<String> {
-    /// Creates a new Chain intended specifically for strings. This uses the Unicode start of text
-    /// and end of text control characters as the starting and ending tokens for the chain.
-    pub fn for_strings() -> Chain<String> {
-        Chain::new()
-    }
-
     /// Feeds a string of text into the chain.     
     pub fn feed_str(&mut self, string: &str) -> &mut Chain<String> {
         self.feed(string.split_str(" ").map(|s| s.to_owned()).collect())
@@ -302,7 +295,7 @@ mod test {
     #[test]
     fn new() {
         Chain::<u8>::new();
-        Chain::for_strings();
+        Chain::<String>::new();
     }
 
     #[test]
@@ -359,13 +352,13 @@ mod test {
 
     #[test]
     fn feed_str() {
-        let mut chain = Chain::for_strings();
+        let mut chain = Chain::new();
         chain.feed_str("I like cats and dogs");
     }
 
     #[test]
     fn generate_str() {
-        let mut chain = Chain::for_strings();
+        let mut chain = Chain::new();
         chain.feed_str("I like cats").feed_str("I hate cats");
         let out = chain.generate_str();
         println!("{}", out);
@@ -374,28 +367,28 @@ mod test {
 
     #[test]
     fn generate_str_from_token() {
-        let mut chain = Chain::for_strings();
+        let mut chain = Chain::new();
         chain.feed_str("I like cats").feed_str("cats are cute");
         assert!(["cats", "cats are cute"].contains(&chain.generate_str_from_token("cats")[]));
     }
 
     #[test]
     fn generate_str_from_unfound_token() {
-        let mut chain = Chain::for_strings();
+        let mut chain = Chain::new();
         chain.feed_str("I like cats").feed_str("cats are cute");
         assert_eq!(chain.generate_str_from_token("test"), "");
     }
     
     #[test]
     fn str_iter() {    
-        let mut chain = Chain::for_strings();
+        let mut chain = Chain::new();
         chain.feed_str("I like cats and I like dogs");
         assert_eq!(chain.str_iter().size_hint().1, None);
     }
 
     #[test]
     fn str_iter_for() {   
-        let mut chain = Chain::for_strings();
+        let mut chain = Chain::new();
         chain.feed_str("I like cats and I like dogs");
         assert_eq!(chain.str_iter_for(5).collect::<Vec<_>>().len(), 5);
     }
@@ -403,14 +396,14 @@ mod test {
 
     #[test]
     fn save() {
-        let mut chain = Chain::for_strings();
+        let mut chain = Chain::new();
         chain.feed_str("I like cats and I like dogs");
         chain.save_utf8("save.json").unwrap();
     }
 
     #[test]
     fn load() {
-        let mut chain = Chain::for_strings();
+        let mut chain = Chain::new();
         chain.feed_str("I like cats and I like dogs");
         chain.save_utf8("load.json").unwrap();
         let other_chain: Chain<String> = Chain::load_utf8("load.json").unwrap();
