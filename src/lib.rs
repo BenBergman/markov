@@ -39,31 +39,27 @@ use rustc_serialize::json::{Decoder, DecoderError, Encoder, decode, encode};
 /// uses HashMaps internally, and so Eq and Hash are both required.
 #[deriving(RustcEncodable, RustcDecodable, PartialEq, Show)]
 pub struct Chain<T: Eq + Hash> {
-    map: HashMap<Rc<T>, HashMap<Rc<T>, uint>>,
-    start: Rc<T>,
-    end: Rc<T>,
+    map: HashMap<Option<Rc<T>>, HashMap<Option<Rc<T>>, uint>>,
 }
 
 impl<T: Eq + Hash> Chain<T> {
     /// Constructs a new Markov chain using the given tokens as the marked starting and ending
     /// points for generation.
-    pub fn new(start: T, end: T) -> Chain<T> {
-        let start = Rc::new(start);
-        let end = Rc::new(end);
+    pub fn new() -> Chain<T> {
         Chain {
             map: {
                 let mut map = HashMap::new();
-                map.insert(start.clone(), HashMap::new());
+                map.insert(None, HashMap::new());
                 map
-            },
-            start: start, end: end
+            }
         }
     }
 
     /// Determines whether or not the chain is empty. A chain is considered empty if nothing has
     /// been fed into it.
     pub fn is_empty(&self) -> bool {
-        self.map[self.start.clone()].is_empty()
+        let start: Option<Rc<T>> = None;
+        self.map[start].is_empty()
     }
 
 
@@ -72,15 +68,15 @@ impl<T: Eq + Hash> Chain<T> {
     pub fn feed(&mut self, tokens: Vec<T>) -> &mut Chain<T> {
         if tokens.len() == 0 { return self }
         let mut toks = Vec::new();
-        toks.push(self.start.clone());
+        toks.push(None);
         toks.extend(tokens.into_iter().map(|token| {
             let rc = Rc::new(token);
-            if !self.map.contains_key(&rc) {
-                self.map.insert(rc.clone(), HashMap::new());
+            if !self.map.contains_key(&Some(rc.clone())) {
+                self.map.insert(Some(rc.clone()), HashMap::new());
             }
-            rc
+            Some(rc)
         }));
-        toks.push(self.end.clone());
+        toks.push(None);
         for p in toks.windows(2) {
             (&mut self.map[p[0]]).add(p[1].clone());
         }
@@ -92,12 +88,12 @@ impl<T: Eq + Hash> Chain<T> {
     /// state.
     pub fn generate(&self) -> Vec<Rc<T>> {
         let mut ret = Vec::new();
-        let mut curs = self.start.clone();
-        while curs != self.end {
+        let mut curs = None;
+        loop {
             curs = self.map[curs].next();
-            ret.push(curs.clone());
+            if curs.is_none() { break }
+            ret.push(curs.clone().unwrap());    
         }
-        ret.pop();
         ret
     }
 
@@ -107,14 +103,14 @@ impl<T: Eq + Hash> Chain<T> {
     /// found.
     pub fn generate_from_token(&self, token: T) -> Vec<Rc<T>> {
         let token = Rc::new(token);
-        if !self.map.contains_key(&token) { return Vec::new() }
+        if !self.map.contains_key(&Some(token.clone())) { return Vec::new() }
         let mut ret = vec![token.clone()];
-        let mut curs = token;
-        while curs != self.end {
+        let mut curs = Some(token);
+        loop {
             curs = self.map[curs].next();
-            ret.push(curs.clone());
+            if curs.is_none() { break }
+            ret.push(curs.clone().unwrap());    
         }
-        ret.pop();
         ret
     }
 
@@ -164,7 +160,7 @@ impl Chain<String> {
     /// Creates a new Chain intended specifically for strings. This uses the Unicode start of text
     /// and end of text control characters as the starting and ending tokens for the chain.
     pub fn for_strings() -> Chain<String> {
-        Chain::new("\u{0002}".to_owned(), "\u{0003}".to_owned())
+        Chain::new()
     }
 
     /// Feeds a string of text into the chain.     
@@ -268,20 +264,20 @@ impl<'a, T: Eq + Hash + 'a> Iterator<Vec<Rc<T>>> for InfiniteChainIterator<'a, T
 /// A collection of states for the Markov chain.
 trait States<T: PartialEq> {
     /// Adds a state to this states collection.
-    fn add(&mut self, token: Rc<T>);
+    fn add(&mut self, token: Option<Rc<T>>);
     /// Gets the next state from this collection of states.
-    fn next(&self) -> Rc<T>;
+    fn next(&self) -> Option<Rc<T>>;
 }
 
-impl<T: Eq + Hash> States<T> for HashMap<Rc<T>, uint> {
-    fn add(&mut self, token: Rc<T>) {
+impl<T: Eq + Hash> States<T> for HashMap<Option<Rc<T>>, uint> {
+    fn add(&mut self, token: Option<Rc<T>>) {
         match self.entry(token) {
             Occupied(mut e) => *e.get_mut() += 1,
             Vacant(e) => { e.set(1); },
         }
     }
 
-    fn next(&self) -> Rc<T> {
+    fn next(&self) -> Option<Rc<T>> {
         let mut sum = 0;
         for &value in self.values() {
             sum += value;
@@ -305,13 +301,13 @@ mod test {
 
     #[test]
     fn new() {
-        Chain::new(0u, 100u);
+        Chain::<u8>::new();
         Chain::for_strings();
     }
 
     #[test]
     fn is_empty() {
-        let mut chain = Chain::new(0u, 100u);
+        let mut chain = Chain::new();
         assert!(chain.is_empty());
         chain.feed(vec![1u, 2u, 3u]);
         assert!(!chain.is_empty());
@@ -319,13 +315,13 @@ mod test {
 
     #[test]
     fn feed() {
-        let mut chain = Chain::new(0u, 100u);
+        let mut chain = Chain::new();
         chain.feed(vec![3u, 5u, 10u]).feed(vec![5u, 12u]);
     }
 
     #[test]
     fn generate() {
-        let mut chain = Chain::new(0u, 100u);
+        let mut chain = Chain::new();
         chain.feed(vec![3u, 5u, 10u]).feed(vec![5u, 12u]);
         let v = chain.generate().map_in_place(|v| *v);
         assert!([vec![3u, 5u, 10u], vec![3u, 5u, 12u], vec![5u, 10u], vec![5u, 12u]].contains(&v));
@@ -333,7 +329,7 @@ mod test {
 
     #[test]
     fn generate_from_token() {
-        let mut chain = Chain::new(0u, 100u);
+        let mut chain = Chain::new();
         chain.feed(vec![3u, 5u, 10u]).feed(vec![5u, 12u]);
         let v = chain.generate_from_token(5u).map_in_place(|v| *v);
         assert!([vec![5u, 10u], vec![5u, 12u]].contains(&v));
@@ -341,7 +337,7 @@ mod test {
 
     #[test]
     fn generate_from_unfound_token() {
-        let mut chain = Chain::new(0u, 100u);
+        let mut chain = Chain::new();
         chain.feed(vec![3u, 5u, 10u]).feed(vec![5u, 12u]);
         let v = chain.generate_from_token(9u).map_in_place(|v| *v);
         assert_eq!(v, vec![]);
@@ -349,14 +345,14 @@ mod test {
 
     #[test]
     fn iter() {    
-        let mut chain = Chain::new(0u, 100u);
+        let mut chain = Chain::new();
         chain.feed(vec![3u, 5u, 10u]).feed(vec![5u, 12u]);
         assert_eq!(chain.iter().size_hint().1, None);
     }
 
     #[test]
     fn iter_for() {   
-        let mut chain = Chain::new(0u, 100u);
+        let mut chain = Chain::new();
         chain.feed(vec![3u, 5u, 10u]).feed(vec![5u, 12u]);
         assert_eq!(chain.iter_for(5).collect::<Vec<_>>().len(), 5);
     }
@@ -371,7 +367,9 @@ mod test {
     fn generate_str() {
         let mut chain = Chain::for_strings();
         chain.feed_str("I like cats").feed_str("I hate cats");
-        assert!(["I like cats", "I hate cats"].contains(&chain.generate_str()[]));
+        let out = chain.generate_str();
+        println!("{}", out);
+        assert!(["I like cats", "I hate cats"].contains(&out[]));
     }
 
     #[test]
@@ -419,3 +417,4 @@ mod test {
         assert_eq!(other_chain, chain);
     }
 }
+
